@@ -1,0 +1,12 @@
+---
+__perlbrew_packages:
+  - curl
+  - gcc
+  - make
+  - perl-doc
+  - libmodule-build-perl
+  - perlbrew
+  - tar
+  - patch
+  - gzip
+

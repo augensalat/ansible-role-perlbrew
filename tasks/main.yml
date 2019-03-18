@@ -1,0 +1,152 @@
+---
+# Include variables and define needed variables.
+- name: Include OS-specific variables.
+  include_vars: "{{ ansible_os_family }}.yml"
+
+- name: Define perlbrew_packages.
+  set_fact:
+    perlbrew_packages: "{{ __perlbrew_packages | list }}"
+  when: perlbrew_packages is not defined
+
+- name: Include OS-specific tasks.
+  include_tasks: "setup-{{ ansible_os_family }}.yml"
+
+- name: Create perlbrew root directory
+  file:
+    path: "{{ perlbrew_root }}"
+    state: directory
+    owner: "{{ perlbrew_user }}"
+    mode: 0755
+  become: yes
+  become_user: "{{ perlbrew_user }}"
+  tags:
+    - perlbrew
+
+- name: Install perlbrew
+  become: yes
+  become_user: "{{ perlbrew_user }}"
+  shell: curl -L http://install.perlbrew.pl | bash
+  args:
+    creates: "{{ perlbrew_root }}/bin/perlbrew"
+    warn: no
+  register: install_perlbrew
+  tags:
+    - perlbrew
+
+- set_fact:
+    perlbrew_bin: "{{ perlbrew_root}}/bin/perlbrew"
+    perlbrew_as: "{{ perlbrew_perl_version }}{{ perlbrew_usethreads | ternary('-threads','') }}"
+  when: perlbrew_as is not defined
+  tags:
+    - perlbrew
+
+- name: Get available perlbrew Perls
+  command: "{{ perlbrew_bin }} available"
+  register: perlbrew_available_output
+  tags:
+    - perlbrew
+
+- set_fact:
+    perlbrew_available: "{{ perlbrew_available_output.stdout_lines | map('replace','i  ','') | map('trim') | select | list }}"
+
+- name: Fail if wanted Perl version does not exist
+  fail:
+    msg: "Perlbrew can not build {{ perlbrew_perl_version }} because that version does not exist."
+  when:
+    perlbrew_perl_version not in perlbrew_available
+  tags:
+    - perlbrew
+
+- name: Make sure ~/.bashrc exists
+  file:
+    path: "~{{ perlbrew_user }}/.bashrc"
+    state: touch
+    mode: 0644
+    force: no
+  become: yes
+  become_user: "{{ perlbrew_user }}"
+
+- name: Init ~/.bashrc
+  become: yes
+  become_user: "{{ perlbrew_user }}"
+  lineinfile:
+    dest: "{{ item.dest }}"
+    line: "{{ item.line }}"
+  with_items:
+    - dest: "~{{ perlbrew_user }}/.bashrc"
+      line: "export PERLBREW_ROOT={{ perlbrew_root }}"
+    - dest: "~{{ perlbrew_user }}/.bashrc"
+      line: "source ${PERLBREW_ROOT}/etc/bashrc"
+    - dest: "~{{ perlbrew_user }}/.bashrc"
+      line: "source ${PERLBREW_ROOT}/etc/perlbrew-completion.bash"
+  tags:
+    - perlbrew
+    - bashrc
+
+- name: Show Perl version requested
+  debug:
+    msg: "installing {{ perlbrew_perl_version }} as {{ perlbrew_as }}"
+
+- name: Install perlbrew_perl_version (may take some time...)
+  become: yes
+  become_user: "{{ perlbrew_user }}"
+  command: |
+    {{ perlbrew_bin }} install
+      --as {{ perlbrew_as }}
+      --notest
+      --force
+      -j {{ ansible_processor_vcpus + 1 }}
+      -Duseshrplib {{ perlbrew_usethreads | ternary('-Dusethreads','') }}
+      {{ perlbrew_perl_version }}
+  args:
+    creates: "{{ perlbrew_root }}/perls/{{ perlbrew_as }}"
+  register: perlbrew_install_result
+  failed_when: "perlbrew_install_result.rc not in [0,2]"
+  changed_when: "perlbrew_install_result is success"
+  tags:
+    - perlbrew
+
+- name: Install cpanm
+  become: yes
+  become_user: "{{ perlbrew_user }}"
+  shell: "{{ perlbrew_bin }} install-cpanm"
+  args:
+    creates: "{{ perlbrew_root }}/bin/cpanm"
+  tags:
+    - perlbrew
+
+# If perlbrew_switch is true we activate the perlbrew_perl_version for this environment
+# and check the activation. We fail on error.
+# NOTE: become_flags: -i is a must here ! It provides the environment calling .profile/.bashrc
+#       which is needed for the perlbrew commands.
+- block:
+
+  - name: Use Perl {{ perlbrew_perl_version }}
+    shell: >
+      PERLBREW_BASHRC_VERSION=1
+      {{ perlbrew_bin }} switch {{ perlbrew_as }}
+
+  - name: Find active perl version
+    shell: >
+        {{perlbrew_bin}} switch |
+        grep 'perl-[[:alnum:].-][[:alnum:].-]*' |
+        sed -e 's/^.*\(perl-[[:alnum:].-][[:alnum:].-]*\).*$/\1/'
+    register: active_perl 
+  
+  - name: Check if active perl version is correct
+    debug:
+      msg: "ok, active perl version is {{ active_perl.stdout }}"
+    when: active_perl.stdout == perlbrew_perl_version
+
+  - name: Check if activation of perl version failed
+    fail:
+      msg: "perl version {{ perlbrew_perl_version }} not active !!!"
+    when: active_perl.stdout != perlbrew_as
+
+  become: yes
+  become_user: "{{ perlbrew_user }}" 
+  become_flags: -i
+  when: perlbrew_switch
+  tags:
+    - perlbrew
+    - switch

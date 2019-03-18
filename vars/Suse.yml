@@ -1,0 +1,11 @@
+---
+__perlbrew_packages:
+  - curl
+  - gcc
+  - make
+  - perl
+  - gzip
+  - bzip2
+  - tar
+  - patch
+

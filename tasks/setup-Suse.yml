@@ -1,0 +1,6 @@
+---
+- name: Ensure perlbrew dependencies are installed on Suse.
+  zypper:
+    name: "{{ perlbrew_packages }}"
+    state: "{{ perlbrew_packages_state }}"
+  become: yes

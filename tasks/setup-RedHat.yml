@@ -1,0 +1,7 @@
+---
+- name: Ensure perlbrew dependencies are installed on Redhat.
+  package:
+    name: "{{ perlbrew_packages }}"
+    state: "{{ perlbrew_packages_state }}"
+    enablerepo: "{{ perlbrew_enablerepo | default(omit, true) }}"
+  become: yes
