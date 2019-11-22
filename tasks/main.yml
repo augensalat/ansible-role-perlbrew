@@ -41,7 +41,7 @@
     - perlbrew
 
 - name: Get available perlbrew Perls
-  command: "{{ perlbrew_bin }} available"
+  command: "{{ perlbrew_bin }} available --all"
   register: perlbrew_available_output
   tags:
     - perlbrew
